@@ -631,10 +631,8 @@ class RegresionLogisticaMiniBatch():
 
     def entrena(self, X, y, Xv=None, yv=None, n_epochs=100, salida_epoch=False, early_stopping=False, paciencia=3):
         self.clases = np.unique(y)
-        y = y.reshape(-1, 1)
-        yv = yv.reshape(-1, 1)
         # Inicializacion de pesos 
-        self.pesos = np.random.uniform(-1, 1, (X.shape[1], 1))
+        self.pesos = np.random.uniform(-1, 1, (X.shape[1],))
         self.bias = np.random.uniform(-1, 1, 1)
 
         # Entrenamiento
@@ -661,7 +659,7 @@ class RegresionLogisticaMiniBatch():
             for i in range(0,X.shape[0], self.batch_tam):
                 batch_x = X[i:i+self.batch_tam]
                 batch_y = y[i:i+self.batch_tam]
-                self.pesos = self.pesos + self.rate * np.sum((batch_y - self.clasifica_prob(batch_x)) * batch_x, axis=0).reshape(-1,1)
+                self.pesos = self.pesos + self.rate * np.sum((batch_y - self.clasifica_prob(batch_x)).reshape(-1,1) * batch_x, axis=0)
          
             if salida_epoch:
                 entropia_entrenamiento = np.sum(entropia_cruzada(y, self.clasifica_prob(X)))
@@ -710,15 +708,15 @@ class RegresionLogisticaMiniBatch():
 
 
 lr_cancer=RegresionLogisticaMiniBatch(rate=0.1,rate_decay=True)
-lr_cancer.entrena(Xe_cancer_n,ye_cancer,Xv_cancer_n,yv_cancer,salida_epoch=True,early_stopping=True)
+lr_cancer.entrena(Xe_cancer_n,ye_cancer,Xv_cancer_n,yv_cancer,salida_epoch=False,early_stopping=True)
 
-print(lr_cancer.clasifica(Xv_cancer_n[24:27]))
+#print(lr_cancer.clasifica(Xv_cancer_n[24:27]))
 # array([0, 1, 0])   # Predicción para los ejemplos 24,25 y 26 
 
-print(yv_cancer[24:27])
+#print(yv_cancer[24:27])
 # array([0, 1, 0])   # La predicción anterior coincide con los valores esperado para esos ejemplos
 
-print(lr_cancer.clasifica_prob(Xv_cancer_n[24:27]))
+#print(lr_cancer.clasifica_prob(Xv_cancer_n[24:27]))
 # array([7.44297196e-17, 9.99999477e-01, 1.98547117e-18])
 
 
@@ -816,6 +814,54 @@ print(lr_cancer.clasifica_prob(Xv_cancer_n[24:27]))
 # >>> rendimiento(lr16,Xp_cancer_n,yp_cancer)
 # 0.9646017699115044
 
+def rendimiento_validacion_cruzada(clase_clasificador, params, X, y, Xv=None, yv=None, n=5):
+    
+    # Realizar n particiones aleatorias y estratificadas
+
+    # Separamos por clases
+    clases = np.unique(y)
+
+    # Dividimos en n particiones
+    X_particiones = [np.empty((0, X.shape[1])) for _ in range(n)]
+    y_particiones = [np.empty((0,)) for _ in range(n)]
+
+    for clase in clases:
+        # Obtenemos los indices de las filas que pertenecen a la clase
+        indices_clase = np.where(y == clase)[0]
+
+        # Barajamos los indices
+        np.random.shuffle(indices_clase)
+
+        # Dividimos los indices en n particiones
+        particiones = np.array_split(indices_clase, n)
+
+        # Vamos añadiendo elementos a las particiones correspondientes
+        for i in range(n):
+            X_particiones[i] = np.append(X_particiones[i], X[particiones[i]], axis=0)
+            y_particiones[i] = np.append(y_particiones[i], y[particiones[i]], axis=0)
+
+
+    # Cada particion tomarla como conjunto de validacion y el resto como conjunto de entrenamiento
+    media_rend = 0
+    for i in range(n):
+        X_entrenamiento = np.concatenate(X_particiones[:i] + X_particiones[i+1:], axis=0)
+        y_entrenamiento = np.concatenate(y_particiones[:i] + y_particiones[i+1:], axis=0)
+        X_val = X_particiones[i]
+        y_val = y_particiones[i]
+        modelo = RegresionLogisticaMiniBatch(**params)
+
+        modelo.entrena(X_entrenamiento, y_entrenamiento, Xv=X_val, yv=y_val)
+        rendimiento_i = rendimiento(modelo, X_val, y_val)
+        print("Partición: {}. Rendimiento: {}".format(i+1, rendimiento_i))
+        media_rend += rendimiento_i
+        
+    # Media de los errores obtenidos 
+    media_rend /= n
+
+    return media_rend
+
+
+print(rendimiento_validacion_cruzada(RegresionLogisticaMiniBatch,{"batch_tam":16,"rate":0.01,"rate_decay":True},Xe_cancer_n,ye_cancer,n=5))
 #------------------------------------------------------------------------------
 
 
