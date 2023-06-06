@@ -45,8 +45,9 @@
 #   saldrán mucho más cortas y eficientes, y se puntuarÁn mejor.   
 
 import numpy as np
-from carga_datos import X_credito, y_credito, X_iris, y_iris, X_votos, y_votos, X_cancer, y_cancer
+from carga_datos import X_credito, y_credito, X_iris, y_iris, X_votos, y_votos, X_cancer, y_cancer, X_train_imdb, y_train_imdb, X_test_imdb, y_test_imdb
 from scipy.special import expit  
+import itertools
 
 # *****************************************
 # CONJUNTOS DE DATOS A USAR EN ESTE TRABAJO
@@ -217,6 +218,10 @@ def particion_entr_prueba(X, y, test=0.20):
         
     return X_train, X_test, y_train, y_test
 
+def preprocesado_conjunto_etiquetas_votos(y):
+    return np.where(y == 'republicano', 1, 0)
+
+y_votos = preprocesado_conjunto_etiquetas_votos(y_votos)
 Xe_votos,Xp_votos,ye_votos,yp_votos=particion_entr_prueba(X_votos,y_votos,test=1/3)
 # print(y_votos.shape[0],ye_votos.shape[0],yp_votos.shape[0])
 
@@ -848,7 +853,7 @@ def rendimiento_validacion_cruzada(clase_clasificador, params, X, y, Xv=None, yv
         y_entrenamiento = np.concatenate(y_particiones[:i] + y_particiones[i+1:], axis=0)
         X_val = X_particiones[i]
         y_val = y_particiones[i]
-        modelo = RegresionLogisticaMiniBatch(**params)
+        modelo = clase_clasificador(**params)
 
         modelo.entrena(X_entrenamiento, y_entrenamiento, Xv=X_val, yv=y_val)
         rendimiento_i = rendimiento(modelo, X_val, y_val)
@@ -861,7 +866,7 @@ def rendimiento_validacion_cruzada(clase_clasificador, params, X, y, Xv=None, yv
     return media_rend
 
 
-print(rendimiento_validacion_cruzada(RegresionLogisticaMiniBatch,{"batch_tam":16,"rate":0.01,"rate_decay":True},Xe_cancer_n,ye_cancer,n=5))
+#print(rendimiento_validacion_cruzada(RegresionLogisticaMiniBatch, {"batch_tam":16,"rate":0.01,"rate_decay":True},Xe_cancer_n,ye_cancer,n=5))
 #------------------------------------------------------------------------------
 
 
@@ -905,6 +910,38 @@ print(rendimiento_validacion_cruzada(RegresionLogisticaMiniBatch,{"batch_tam":16
 # en el que se vea cómo desciende la entropía cruzada y aumenta el 
 # rendimiento durante un entrenamiento.     
 
+def busqueda_parametros(clasificador, rates, rates_decay, batch_tams, X, y, Xv, yv, n=5):
+    mejor_params = None
+    mejor_rend = 0.0
+    for iter_params in itertools.product(rates, rates_decay, batch_tams):
+        rate_i, rate_decay_i, batch_tam_i = iter_params
+        print("Parametros: rate: {}, rate_decay: {}, batch_tam: {}".format(rate_i, rate_decay_i, batch_tam_i))
+        rend = rendimiento_validacion_cruzada(clasificador, {"batch_tam":batch_tam_i,"rate":rate_i,"rate_decay":rate_decay_i},X,y,n)
+        
+        print("Rendimiento (validación cruzada): {}".format(rend))
+        print("\n")
+        if rend > mejor_rend:
+            mejor_params = iter_params
+
+    mejor_rate, mejor_rate_decay, mejor_batch_tam = mejor_params
+    print("Mejores parámetros obtenidos: \n\t- rate: {}\n\t- rate_decay: {}\n\t- batch_tam: {}\n\n".format(mejor_rate, mejor_rate_decay, mejor_batch_tam))
+    mejor_modelo = clasificador(rate=mejor_rate, rate_decay=mejor_rate_decay, batch_tam=mejor_batch_tam)
+    mejor_modelo.entrena(X, y, Xv=Xv, yv=yv, salida_epoch=True, early_stopping=True)
+    print("\n\nRendimiento sobre conjunto de prueba con los mejores parametros: {}".format(rendimiento(mejor_modelo, Xv, yv)))
+    
+    return mejor_params
+
+rates = [0.001, 0.01, 0.1]
+rates_decay = [True, False]
+batch_tams = [16, 32, 64]
+
+#rate, rate_decay, batch_tam = busqueda_parametros(RegresionLogisticaMiniBatch, rates, rates_decay, batch_tams, Xe_votos, ye_votos, Xp_votos, yp_votos)
+
+#rate, rate_decay, batch_tam = busqueda_parametros(RegresionLogisticaMiniBatch, rates, rates_decay, batch_tams, Xe_cancer_n, ye_cancer, Xv_cancer_n, yv_cancer)   
+
+#rate, rate_decay, batch_tam = busqueda_parametros(RegresionLogisticaMiniBatch, rates, rates_decay, batch_tams, X_train_imdb, y_train_imdb, X_test_imdb, y_test_imdb)
+
+
 # ----------------------------
 
 
@@ -936,20 +973,37 @@ print(rendimiento_validacion_cruzada(RegresionLogisticaMiniBatch,{"batch_tam":16
 #  clasificador binario RegresionLogisticaMiniBatch
 
 
-# class RL_OvR():
+class RL_OvR():
 
-#     def __init__(self,rate=0.1,rate_decay=False,
-#                   batch_tam=64):
+    def __init__(self, rate=0.1, rate_decay=False, batch_tam=64):
+        self.rate = rate
+        self.rate_decay = rate_decay
+        self.batch_tam = batch_tam
+        self.clases = None
+        self.modelos = []
 
-#        ......
-
-#     def entrena(self,X,y,n_epochs=100,salida_epoch=False):
-
-#        .......
-
-#     def clasifica(self,ejemplos):
-
-#        ......
+    def entrena(self, X, y, n_epochs=100, salida_epoch=False, Xv=None, yv=None, early_stopping=False):
+        # Pasamos Xv, yv y early_stopping para que busqueda_parametros funcione correctamente
+        self.clases = np.unique(y)
+        for clase in self.clases:
+            y_bin = np.where(y == clase, 1, 0)
+            modelo = RegresionLogisticaMiniBatch(rate=self.rate, rate_decay=self.rate_decay, batch_tam=self.batch_tam)
+            modelo.entrena(X, y_bin, n_epochs=n_epochs, salida_epoch=salida_epoch)
+            self.modelos.append(modelo)
+     
+    def clasifica(self,ejemplos):
+        self.comprobar_entrenamiento()
+        # El modelo i corresponde a la clase i 
+        preds = np.empty((0, len(self.clases)))
+        for ejemplo in ejemplos:
+            pred = self.clases[np.argmax([modelo.clasifica_prob(ejemplo) for modelo in self.modelos])]
+            preds = np.append(preds, pred)
+            
+        return preds
+    
+    def comprobar_entrenamiento(self):
+        if len(self.modelos) == 0:
+            raise ClasificadorNoEntrenado("El clasificador no está entrenado.") 
             
 
 
@@ -966,17 +1020,17 @@ print(rendimiento_validacion_cruzada(RegresionLogisticaMiniBatch,{"batch_tam":16
 
 
 # --------------------------------------------------------------------
-# >>> Xe_iris,Xp_iris,ye_iris,yp_iris=particion_entr_prueba(X_iris,y_iris)
+Xe_iris,Xp_iris,ye_iris,yp_iris=particion_entr_prueba(X_iris,y_iris)
 
-# >>> rl_iris_ovr=RL_OvR(rate=0.001,batch_tam=8)
+rl_iris_ovr=RL_OvR(rate=0.001,batch_tam=8)
 
-# >>> rl_iris_ovr.entrena(Xe_iris,ye_iris)
+rl_iris_ovr.entrena(Xe_iris,ye_iris)
 
-# >>> rendimiento(rl_iris_ovr,Xe_iris,ye_iris)
+#print(rendimiento(rl_iris_ovr,Xe_iris,ye_iris))
 # 0.8333333333333334
 
-# >>> rendimiento(rl_iris_ovr,Xp_iris,yp_iris)
-# >>> 0.9
+#print(rendimiento(rl_iris_ovr,Xp_iris,yp_iris))
+#0.9
 # --------------------------------------------------------------------
 
 
@@ -1034,7 +1088,7 @@ print(rendimiento_validacion_cruzada(RegresionLogisticaMiniBatch,{"batch_tam":16
 # >>> Xc=np.array([["a",1,"c","x"],
 #                  ["b",2,"c","y"],
 #                  ["c",1,"d","x"],
-#                  ["a",2,"d","z"],
+#                  ["a",2,"d","z"],preds
 #                  ["c",1,"e","y"],
 #                  ["c",2,"f","y"]])
    
@@ -1053,8 +1107,27 @@ print(rendimiento_validacion_cruzada(RegresionLogisticaMiniBatch,{"batch_tam":16
 #   * Columna 2 ---> Columnas 5,6,7,8
 #   * Columna 3 ---> Columnas 9, 10,11     
 
+def codifica_one_hot(X):
     
+    X_trans = np.empty((X.shape[0], 0))
+    for i in range(X.shape[1]):
+        valores = np.unique(X[:,i])
+        for j in range(len(valores)):
+            X_trans = np.append(X_trans, np.where(X[:,i] == valores[j], 1, 0).reshape(-1,1), axis=1)
+            # reshape(-1,1) despues del where porque se necesita que sea 
+            # un vector columna (num_filas, 1)
   
+    return X_trans
+
+
+Xc=np.array([["a",1,"c","x"],
+             ["b",2,"c","y"],
+             ["c",1,"d","x"],
+             ["a",2,"d","z"],
+             ["c",1,"e","y"],
+             ["c",2,"f","y"]])
+   
+#print(codifica_one_hot(Xc))
 
 # -------- 
 
@@ -1083,6 +1156,16 @@ print(rendimiento_validacion_cruzada(RegresionLogisticaMiniBatch,{"batch_tam":16
 # Ajustar adecuadamente los parámetros (nuevamente, no es necesario ser demasiado 
 # exhaustivo)
 
+
+X_credito_trans = codifica_one_hot(X_credito)
+Xe_credito_trans, Xp_credito_trans, ye_credito_trans, yp_credito_trans = particion_entr_prueba(X_credito_trans, y_credito)
+
+rates = [0.001, 0.01, 0.1]
+rates_decay = [True, False]
+batch_tams = [16, 32, 64]
+
+#mejores_params = busqueda_parametros(RL_OvR, rates, rates_decay, batch_tams, Xe_credito_trans, ye_credito_trans, Xp_credito_trans, yp_credito_trans, n=5)
+
 # ----------------------
 
 
@@ -1098,7 +1181,7 @@ print(rendimiento_validacion_cruzada(RegresionLogisticaMiniBatch,{"batch_tam":16
 
 
 # ---------------------------------------------------------
-# 7.2) Clasificación de imágenes de dígitos escritos a mano
+# 8.2) Clasificación de imágenes de dígitos escritos a mano
 # ---------------------------------------------------------
 
 
@@ -1125,6 +1208,74 @@ print(rendimiento_validacion_cruzada(RegresionLogisticaMiniBatch,{"batch_tam":16
 # Ajustar los parámetros de tamaño de batch, tasa de aprendizaje y
 # rate_decay para tratar de obtener un rendimiento aceptable (por encima del
 # 75% de aciertos sobre test). 
+
+def leer_fichero_imagenes(ruta):
+    images = []
+    with open(ruta, 'r') as f:
+        data = f.read().splitlines()
+        for i in range(0, len(data), 28):
+            imagen = transformar_imagen(data[i:i+28])
+            images.append(imagen)
+    return np.array(images)
+
+def transformar_imagen(imagen):
+    imagen = "".join(imagen)
+    imagen = np.array(list(imagen))
+    imagen = np.where(imagen == ' ', 0, 1)
+    return imagen
+
+def leer_fichero_etiquetas(ruta):
+    images = []
+    with open(ruta, 'r') as f:
+        data = f.read().splitlines()
+        for i in range(0, len(data)):
+            images.append(int(data[i]))
+    return np.array(images)
+
+def procesar_dataset():
+    train_images = leer_fichero_imagenes("datos/digitdata/trainingimages")
+    train_labels = leer_fichero_etiquetas("datos/digitdata/traininglabels")
+    validation_images = leer_fichero_imagenes("datos/digitdata/validationimages")
+    validation_labels = leer_fichero_etiquetas("datos/digitdata/validationlabels")
+    test_images = leer_fichero_imagenes("datos/digitdata/testimages")
+    test_labels = leer_fichero_etiquetas("datos/digitdata/testlabels")
+
+    return train_images, train_labels, validation_images, validation_labels, test_images, test_labels
+    
+    
+train_images, train_labels, validation_images, validation_labels, test_images, test_labels = procesar_dataset()
+
+
+rates = [0.001, 0.01, 0.1]
+rates_decay = [True, False]
+batch_tams = [16, 32, 64]
+
+def busqueda_parametros_digitos():
+    mejor_params = None
+    mejor_rendimiento = 0.0
+    for iter_params in itertools.product(batch_tams, rates, rates_decay): 
+        print("batch_tam: {}, rate: {}, rate_decay: {}".format(*iter_params), end=" ")
+        batch_tam, rate, rate_decay = iter_params 
+        modelo = RL_OvR(rate=rate, rate_decay=rate_decay, batch_tam=batch_tam)
+        modelo.entrena(train_images, train_labels, n_epochs=20, salida_epoch=True)
+        
+        # Utilizamos conjunto de validación para ajuste de parámetros
+        rend = rendimiento(modelo, validation_images, validation_labels)
+
+        if rend > mejor_rendimiento:
+            mejor_params = iter_params
+            mejor_rendimiento = rend
+
+    return mejor_params 
+    
+    
+
+#batch_tam, rate, rate_decay = busqueda_parametros_digitos()
+#modelo = RL_OvR(rate=rate, rate_decay=rate_decay, batch_tam=batch_tam)
+#modelo.entrena(train_images, train_labels, n_epochs=20, salida_epoch=True)
+#rend_test = rendimiento(modelo, test_images, test_labels)
+#print("Rendimiento en test -> ", rend_test)
+
 
 
 # --------------------------------------------------------------------------
