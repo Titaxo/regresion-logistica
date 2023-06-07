@@ -46,7 +46,7 @@
 
 import numpy as np
 from carga_datos import X_credito, y_credito, X_iris, y_iris, X_votos, y_votos, X_cancer, y_cancer, X_train_imdb, y_train_imdb, X_test_imdb, y_test_imdb
-from scipy.special import expit  
+from scipy.special import expit, softmax
 import itertools
 
 # *****************************************
@@ -574,9 +574,11 @@ class ClasificadorNoEntrenado(Exception): pass
 
 # Para calcular el rendimiento de un clasificador sobre un conjunto de ejemplos, usar la 
 # siguiente función:
-    
+
+
 def rendimiento(clasif,X,y):
-    return sum(clasif.clasifica(X)==y)/y.shape[0]
+    return sum(clasif.clasifica(X)==y)/y.shape[0]   
+
 
 # Por ejemplo, los rendimientos sobre los datos (normalizados) del cáncer:
     
@@ -624,11 +626,10 @@ def entropia_cruzada(y, ypred):
       
 class RegresionLogisticaMiniBatch():
 
-    def __init__(self, rate=0.1, rate_decay=False, n_epochs=100, batch_tam=64):
+    def __init__(self, rate=0.1, rate_decay=False, batch_tam=64):
         self.rate = rate
         self.rate_inicial = rate
         self.rate_decay = rate_decay
-        self.n_epochs = n_epochs
         self.batch_tam = batch_tam
         self.pesos = None
         self.bias = None
@@ -665,11 +666,11 @@ class RegresionLogisticaMiniBatch():
                 batch_x = X[i:i+self.batch_tam]
                 batch_y = y[i:i+self.batch_tam]
                 self.pesos = self.pesos + self.rate * np.sum((batch_y - self.clasifica_prob(batch_x)).reshape(-1,1) * batch_x, axis=0)
+                self.bias = self.bias + self.rate * np.sum((batch_y - self.clasifica_prob(batch_x)).reshape(-1,1), axis=0)
          
             if salida_epoch:
                 entropia_entrenamiento = np.sum(entropia_cruzada(y, self.clasifica_prob(X)))
                 rendimiento_entrenamiento = rendimiento(self, X, y)
-                
                 print("Epoch {}, en entrenamiento EC: {}, rendimiento: {}.".format(epoch+1, entropia_entrenamiento, rendimiento_entrenamiento)) 
                 if early_stopping:
                     entropia_val = np.sum(entropia_cruzada(yv, self.clasifica_prob(Xv)))
@@ -713,15 +714,15 @@ class RegresionLogisticaMiniBatch():
 
 
 lr_cancer=RegresionLogisticaMiniBatch(rate=0.1,rate_decay=True)
-lr_cancer.entrena(Xe_cancer_n,ye_cancer,Xv_cancer_n,yv_cancer,salida_epoch=False,early_stopping=True)
+lr_cancer.entrena(Xe_cancer_n,ye_cancer,Xv_cancer_n,yv_cancer,salida_epoch=True,early_stopping=True)
 
-#print(lr_cancer.clasifica(Xv_cancer_n[24:27]))
+print(lr_cancer.clasifica(Xv_cancer_n[24:27]))
 # array([0, 1, 0])   # Predicción para los ejemplos 24,25 y 26 
 
-#print(yv_cancer[24:27])
+print(yv_cancer[24:27])
 # array([0, 1, 0])   # La predicción anterior coincide con los valores esperado para esos ejemplos
 
-#print(lr_cancer.clasifica_prob(Xv_cancer_n[24:27]))
+print(lr_cancer.clasifica_prob(Xv_cancer_n[24:27]))
 # array([7.44297196e-17, 9.99999477e-01, 1.98547117e-18])
 
 
@@ -1309,29 +1310,7 @@ def busqueda_parametros_digitos():
 
 #  Se pide implementar un clasificador para regresión
 #  multinomial logística con softmax (VERSIÓN MINIBATCH), descrito en las 
-#  diapositivas 55 a 57 del tema de "Complementos de Aprendizaje Automático". 
-
-# class RL_Multinomial():
-
-#     def __init__(self,rate=0.1,rate_decay=False,
-#                   batch_tam=64):
-
-#        ......
-
-#     def entrena(self,X,y,n_epochs=100,salida_epoch=False):
-
-#        .......
-
-#     def clasifica_prob(self,ejemplos):
-
-#        ......
- 
-
-#     def clasifica(self,ejemplos):
-
-#        ......
-   
-
+#  diapositivas 55 a 57 del tema de "Complementos de Aprendizaje Automático".  
  
 # Los parámetros tiene el mismo significado que en el ejercicio 7 de OvR. 
 
@@ -1363,6 +1342,92 @@ def busqueda_parametros_digitos():
 # >>> rendimiento(rl_iris_m,Xp_iris,yp_iris)
 # >>> 0.9736842105263158
 # --------------------------------------------------------------------
+
+def c_m(y_batch, clases):
+    y_trans = np.empty((y_batch.shape[0], 0))
+    for j in range(len(clases)):
+        y_trans = np.append(y_trans, np.where(y_batch == clases[j], 1, 0).reshape(-1,1), axis=1)
+        # reshape(-1,1) despues del where porque se necesita que sea 
+        # un vector columna (num_filas,1)
+    return y_trans
+    
+
+def entropia_cruzada_multiclase(y, pred):
+    return -np.sum(y*np.log(pred))
+
+
+class RL_Multinomial():
+
+    def __init__(self, rate=0.1, rate_decay=False, batch_tam=64):
+        self.rate = rate
+        self.rate_inicial = rate
+        self.rate_decay = rate_decay
+        self.batch_tam = batch_tam
+        self.pesos = None
+        self.bias = None
+        self.clases = None
+
+    def entrena(self, X, y, n_epochs=100, salida_epoch=False):
+        self.clases = np.unique(y)
+        cm_y = c_m(y, self.clases)
+        self.pesos = np.random.uniform(-0.5, 0.5,(len(self.clases), X.shape[1]))
+        self.bias = np.random.uniform(-0.5, 0.5, len(self.clases))
+        if salida_epoch:
+            entropia_entrenamiento = entropia_cruzada_multiclase(cm_y, self.clasifica_prob(X))
+            rendimiento_entrenamiento = rendimiento(self, X, y)
+            print("Inicialmente, en entrenamiento EC: {}, rendimiento: {}.".format(entropia_entrenamiento, rendimiento_entrenamiento)) 
+    
+        for epoch in range(n_epochs):
+
+            # Dividimos aleatoriamente los datos X,y en batches
+            indices = np.random.permutation(X.shape[0]) 
+            X = X[indices]
+            y = y[indices]
+            cm_y = cm_y[indices]
+
+            for batch in range(0, len(X), self.batch_tam):
+                X_batch = X[batch:batch+self.batch_tam]
+                cm_y_batch = cm_y[batch:batch+self.batch_tam]
+                probs = self.clasifica_prob(X_batch)
+                
+                dif = cm_y_batch - probs
+                self.pesos = self.pesos + self.rate * np.dot(dif.T, X_batch)
+                self.bias = self.bias + self.rate * np.sum(dif, axis=0)
+                
+            if self.rate_decay:
+                self.rate = self.rate_inicial / (1 + epoch)
+
+            if salida_epoch:
+                entropia_entrenamiento = entropia_cruzada_multiclase(cm_y, self.clasifica_prob(X))
+                rendimiento_entrenamiento = rendimiento(self, X, y)
+
+                print("Epoch {}, en entrenamiento EC: {}, rendimiento: {}.".format(epoch+1, entropia_entrenamiento, rendimiento_entrenamiento))
+                
+
+    def clasifica_prob(self, ejemplos):
+        self.comprobar_entrenamiento()
+        return softmax(np.dot(ejemplos, self.pesos.T) + self.bias, axis=1)
+        
+
+    def clasifica(self, ejemplos):
+        self.comprobar_entrenamiento()
+        return np.argmax(self.clasifica_prob(ejemplos), axis=1)
+    
+    def comprobar_entrenamiento(self):
+        if self.pesos is None:
+            raise ClasificadorNoEntrenado("El clasificador no está entrenado.") 
+            
+
+rl_iris_m=RL_Multinomial(rate=0.001,batch_tam=8)
+
+#rl_iris_m.entrena(Xe_iris,ye_iris,n_epochs=50, salida_epoch=True)
+
+#print(rendimiento(rl_iris_m,Xe_iris,ye_iris))
+# 0.9732142857142857
+
+#print(rendimiento(rl_iris_m,Xp_iris,yp_iris))
+# >>> 0.9736842105263158
+
 
 # --------------- 
 
