@@ -183,19 +183,11 @@ import itertools
 # ------------------------------------------------------------------
 
 def particion_entr_prueba(X, y, test=0.20):
-    # X: matriz de datos
-    # y: vector de clasificación
-    # test: proporción de datos de prueba
-    # devuelve: X_train, X_test, y_train, y_test: datos de entrenamiento y prueba en ese orden
     
-
-    # A cada fila se le asigna un indice
     indices = np.arange(X.shape[0])
 
-    # Separamos por clases
     clases = np.unique(y)
 
-    # Dividimos en entrenamiento y test para cada clase respetando el orden de los datos del conjunto original
     X_train = np.empty((0, X.shape[1]))
     X_test = np.empty((0, X.shape[1]))
     y_train = np.empty((0,))
@@ -391,7 +383,7 @@ class NormalizadorMinMax():
         self.maximos = None
     
     def ajusta(self,X):
-        # Calcular los maximos y minimos por columnas de X
+        # Calculamos los maximos y minimos por columnas de X
         self.minimos = np.min(X, axis=0)
         self.maximos = np.max(X, axis=0)
 
@@ -657,7 +649,7 @@ class RegresionLogisticaMiniBatch():
             mejor_entropia_val = float('Inf')
 
         for epoch in range(n_epochs):
-            # Dividimos aleatoriaente los datos X,y en batches
+            # Dividimos aleatoriamente los datos X,y en batches
             indices = np.random.permutation(X.shape[0]) 
             X = X[indices]
             y = y[indices]
@@ -821,25 +813,17 @@ print(lr_cancer.clasifica_prob(Xv_cancer_n[24:27]))
 # 0.9646017699115044
 
 def rendimiento_validacion_cruzada(clase_clasificador, params, X, y, Xv=None, yv=None, n=5):
-    
-    # Realizar n particiones aleatorias y estratificadas
-
-    # Separamos por clases
     clases = np.unique(y)
 
-    # Dividimos en n particiones
     X_particiones = [np.empty((0, X.shape[1])) for _ in range(n)]
     y_particiones = [np.empty((0,)) for _ in range(n)]
 
     for clase in clases:
-        # Obtenemos los indices de las filas que pertenecen a la clase
-        indices_clase = np.where(y == clase)[0]
-
-        # Barajamos los indices
+        indices_clase = np.where(y == clase)[0] # [0] para tomar indices de la clase 
         np.random.shuffle(indices_clase)
 
         # Dividimos los indices en n particiones
-        particiones = np.array_split(indices_clase, n)
+        particiones = np.array_split(indices_clase, n)      
 
         # Vamos añadiendo elementos a las particiones correspondientes
         for i in range(n):
@@ -914,7 +898,7 @@ def rendimiento_validacion_cruzada(clase_clasificador, params, X, y, Xv=None, yv
 def busqueda_parametros(clasificador, rates, rates_decay, batch_tams, X, y, Xv, yv, n=5):
     mejor_params = None
     mejor_rend = 0.0
-    for iter_params in itertools.product(rates, rates_decay, batch_tams):
+    for iter_params in itertools.product(rates, rates_decay, batch_tams): # Producto cartesiano de elementos
         rate_i, rate_decay_i, batch_tam_i = iter_params
         print("Parametros: rate: {}, rate_decay: {}, batch_tam: {}".format(rate_i, rate_decay_i, batch_tam_i))
         rend = rendimiento_validacion_cruzada(clasificador, {"batch_tam":batch_tam_i,"rate":rate_i,"rate_decay":rate_decay_i},X,y,n)
@@ -984,7 +968,7 @@ class RL_OvR():
         self.modelos = []
 
     def entrena(self, X, y, n_epochs=100, salida_epoch=False, Xv=None, yv=None, early_stopping=False):
-        # Pasamos Xv, yv y early_stopping para que busqueda_parametros funcione correctamente
+        # Pasamos Xv, yv y early_stopping para que busqueda_parametros funcione correctamente aunque no lo usamos
         self.clases = np.unique(y)
         for clase in self.clases:
             y_bin = np.where(y == clase, 1, 0)
@@ -1117,6 +1101,7 @@ def codifica_one_hot(X):
             X_trans = np.append(X_trans, np.where(X[:,i] == valores[j], 1, 0).reshape(-1,1), axis=1)
             # reshape(-1,1) despues del where porque se necesita que sea 
             # un vector columna (num_filas, 1)
+            # axis=1 porque vamos añadiendo a X_trans por columnas
   
     return X_trans
 
@@ -1406,11 +1391,13 @@ class RL_Multinomial():
 
     def clasifica_prob(self, ejemplos):
         self.comprobar_entrenamiento()
+        # Obtenemos matriz con vectores de probabilidades (cada vector de prob es una fila)
         return softmax(np.dot(ejemplos, self.pesos.T) + self.bias, axis=1)
         
 
     def clasifica(self, ejemplos):
         self.comprobar_entrenamiento()
+        # Tomamos índice (clase correspondiente) con máxima probabilidad por fila 
         return np.argmax(self.clasifica_prob(ejemplos), axis=1)
     
     def comprobar_entrenamiento(self):
